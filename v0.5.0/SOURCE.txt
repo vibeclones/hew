@@ -1,0 +1,4 @@
+Unpacked from hew3d/hew, asset hew-web-v0.5.0.tar.gz, release v0.5.0
+https://github.com/hew3d/hew/releases/tag/v0.5.0
+One change: root-absolute paths in index.html, the main script, the service-worker registration and the web manifest were prefixed with /hew/v0.5.0 so the app works from a subfolder.
+Hew is AGPL-3.0 (with the Hew Plugin API Exception); the full source for this version is at https://github.com/hew3d/hew/tree/v0.5.0

@@ -1,0 +1,1 @@
+import{_ as a}from"./index-DVp2pUG2.js";class _{async write(r,t){const{invoke:e}=await a(async()=>{const{invoke:o}=await import("./core-DhEqZVGG.js");return{invoke:o}},[]);return await e("reproducer_write",{name:r,contents:t})}}export{_ as TauriReproducerStore};
