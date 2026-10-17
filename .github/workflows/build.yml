@@ -4,6 +4,11 @@ on:
   schedule:
     - cron: "37 6 * * *"
   workflow_dispatch:
+    inputs:
+      limit:
+        description: "How many of the newest upstream releases to consider"
+        required: false
+        default: "6"
 
 permissions:
   contents: write
@@ -26,7 +31,7 @@ jobs:
         run: |
           # Each upstream release ships its finished web app as hew-web-<tag>.tar.gz. Unpack that, and point the few
           # root-absolute paths in it at this version's own folder so it works from a subfolder.
-          for tag in $(gh release list -R "$UP" --limit 6 --exclude-drafts --exclude-pre-releases --json tagName -q '.[].tagName'); do
+          for tag in $(gh release list -R "$UP" --limit "${{ inputs.limit || '6' }}" --exclude-drafts --exclude-pre-releases --json tagName -q '.[].tagName'); do
             ver="${tag#v}"
             [ -d "v$ver" ] && continue
             asset="hew-web-$tag.tar.gz"
@@ -58,6 +63,9 @@ jobs:
           printf '<!doctype html><meta charset="utf-8"><title>%s</title><meta http-equiv="refresh" content="0; url=../v%s/"><link rel="canonical" href="../v%s/"><a href="../v%s/">Open %s %s</a>\n' "$APP" "$latest" "$latest" "$latest" "$APP" "$latest" > latest/index.html
           echo "$versions" | jq -R . | jq -s --arg latest "$latest" '{latest: $latest, versions: .}' > versions.json
           cat versions.json
+
+      - name: Keep the site under its size cap
+        run: bash scripts/prune.sh
 
       - name: Commit and request a Pages build
         run: |
