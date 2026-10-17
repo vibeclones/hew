@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       limit:
-        description: "How many of the newest upstream releases to consider"
+        description: "How many of the newest releases to consider, or 'taste' to thin the whole history toward the past"
         required: false
         default: "6"
 
@@ -31,7 +31,13 @@ jobs:
         run: |
           # Each upstream release ships its finished web app as hew-web-<tag>.tar.gz. Unpack that, and point the few
           # root-absolute paths in it at this version's own folder so it works from a subfolder.
-          for tag in $(gh release list -R "$UP" --limit "${{ inputs.limit || '6' }}" --exclude-drafts --exclude-pre-releases --json tagName -q '.[].tagName'); do
+          if [ "${{ inputs.limit || '6' }}" = taste ]; then
+            # Thin the history toward the past (see scripts/pick.py) instead of a hard cutoff.
+            tags=$(gh release list -R "$UP" --limit 400 --exclude-drafts --exclude-pre-releases --json tagName,publishedAt | python3 scripts/pick.py)
+          else
+            tags=$(gh release list -R "$UP" --limit "${{ inputs.limit || '6' }}" --exclude-drafts --exclude-pre-releases --json tagName -q '.[].tagName')
+          fi
+          for tag in $tags; do
             ver="${tag#v}"
             [ -d "v$ver" ] && continue
             asset="hew-web-$tag.tar.gz"
