@@ -1,0 +1,73 @@
+name: Mirror upstream releases
+
+on:
+  schedule:
+    - cron: "37 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+
+concurrency: build
+
+env:
+  UP: hew3d/hew
+  APP: hew
+  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Mirror new releases
+        run: |
+          # Each upstream release ships its finished web app as hew-web-<tag>.tar.gz. Unpack that, and point the few
+          # root-absolute paths in it at this version's own folder so it works from a subfolder.
+          for tag in $(gh release list -R "$UP" --limit 6 --exclude-drafts --exclude-pre-releases --json tagName -q '.[].tagName'); do
+            ver="${tag#v}"
+            [ -d "v$ver" ] && continue
+            asset="hew-web-$tag.tar.gz"
+            tmp=$(mktemp -d)
+            if ! gh release download "$tag" -R "$UP" -p "$asset" -D "$tmp"; then echo "No web bundle on $tag"; continue; fi
+            mkdir "v$ver"
+            tar -xzf "$tmp/$asset" -C "v$ver" --exclude='._*' --exclude='.DS_Store'
+            [ -f "v$ver/index.html" ] || { echo "::warning::$asset has no index.html"; rm -rf "v$ver"; continue; }
+            P="/$APP/v$ver"
+            cd "v$ver"
+            sed -i -E 's#(href|src)="/(favicon|apple-touch-icon|manifest|assets/)#\1="'"$P"'/\2#g' index.html
+            for f in assets/index-*.js; do sed -i 's#`/assets/#`'"$P"'/assets/#g' "$f"; done
+            for f in assets/virtual_pwa-register-*.js; do sed -i 's#`/sw.js`#`'"$P"'/sw.js`#g; s#scope:`/`#scope:`'"$P"'/`#g' "$f"; done
+            sed -i 's#"start_url":"/"#"start_url":"'"$P"'/"#; s#"scope":"/"#"scope":"'"$P"'/"#' manifest.webmanifest
+            # Anything still pointing at the site root would 404 here.
+            if grep -rEq '(href|src)="/(favicon|apple-touch-icon|manifest|assets/)|`/assets/|`/sw\.js`' index.html assets/*.js; then echo "::warning::root-absolute paths remain in v$ver"; fi
+            cd ..
+            for f in LICENSE LICENSE-EXCEPTION; do curl -sSfL "https://raw.githubusercontent.com/$UP/$tag/$f" -o "v$ver/$f" || true; done
+            printf 'Unpacked from %s, asset %s, release %s\nhttps://github.com/%s/releases/tag/%s\nOne change: root-absolute paths in index.html, the main script, the service-worker registration and the web manifest were prefixed with /%s/v%s so the app works from a subfolder.\nHew is AGPL-3.0 (with the Hew Plugin API Exception); the full source for this version is at https://github.com/%s/tree/%s\n' "$UP" "$asset" "$tag" "$UP" "$tag" "$APP" "$ver" "$UP" "$tag" > "v$ver/SOURCE.txt"
+            rm -rf "$tmp"
+          done
+
+      - name: Update latest and versions.json
+        run: |
+          versions=$(find . -maxdepth 1 -type d -name 'v[0-9]*' -printf '%f\n' | sed 's/^v//' | sort -rV)
+          [ -n "$versions" ] || { echo "No versions"; exit 0; }
+          latest=$(echo "$versions" | head -n1)
+          mkdir -p latest
+          printf '<!doctype html><meta charset="utf-8"><title>%s</title><meta http-equiv="refresh" content="0; url=../v%s/"><link rel="canonical" href="../v%s/"><a href="../v%s/">Open %s %s</a>\n' "$APP" "$latest" "$latest" "$latest" "$APP" "$latest" > latest/index.html
+          echo "$versions" | jq -R . | jq -s --arg latest "$latest" '{latest: $latest, versions: .}' > versions.json
+          cat versions.json
+
+      - name: Commit and request a Pages build
+        run: |
+          git add -A
+          if git diff --cached --quiet; then
+            echo "Nothing new"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Mirror upstream release"
+          git push
+          gh api -X POST "repos/${{ github.repository }}/pages/builds"
