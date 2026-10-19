@@ -39,13 +39,13 @@ jobs:
           fi
           for tag in $tags; do
             ver="${tag#v}"
-            [ -d "v$ver" ] && continue
+            [ -d "v$ver" ] && { bash scripts/skip.sh del "$ver"; continue; }
             asset="hew-web-$tag.tar.gz"
             tmp=$(mktemp -d)
-            if ! gh release download "$tag" -R "$UP" -p "$asset" -D "$tmp"; then echo "No web bundle on $tag"; continue; fi
+            if ! gh release download "$tag" -R "$UP" -p "$asset" -D "$tmp"; then echo "No web bundle on $tag"; bash scripts/skip.sh add "$ver" "The author published no browser build for this release."; continue; fi
             mkdir "v$ver"
             tar -xzf "$tmp/$asset" -C "v$ver" --exclude='._*' --exclude='.DS_Store'
-            [ -f "v$ver/index.html" ] || { echo "::warning::$asset has no index.html"; rm -rf "v$ver"; continue; }
+            [ -f "v$ver/index.html" ] || { echo "::warning::$asset has no index.html"; bash scripts/skip.sh add "$ver" "Its browser build has no index.html, so it can't be opened."; rm -rf "v$ver"; continue; }
             P="/$APP/v$ver"
             cd "v$ver"
             sed -i -E 's#(href|src)="/(favicon|apple-touch-icon|manifest|assets/)#\1="'"$P"'/\2#g' index.html
